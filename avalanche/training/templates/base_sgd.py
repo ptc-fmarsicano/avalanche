@@ -13,8 +13,10 @@ from avalanche.training.plugins.clock import Clock
 from avalanche.training.plugins.evaluation import default_evaluator
 from avalanche.training.templates.base import BaseTemplate, ExpSequence
 from avalanche.models.utils import avalanche_model_adaptation
-from avalanche.benchmarks.utils.data_loader import TaskBalancedDataLoader, \
-    collate_from_data_or_kwargs
+from avalanche.benchmarks.utils.data_loader import (
+    TaskBalancedDataLoader,
+    collate_from_data_or_kwargs,
+)
 from avalanche.training.utils import trigger_plugins
 
 
@@ -84,9 +86,7 @@ class BaseSGDTemplate(BaseTemplate):
         self.train_mb_size: int = train_mb_size
         """ Training mini-batch size. """
 
-        self.eval_mb_size: int = (
-            train_mb_size if eval_mb_size is None else eval_mb_size
-        )
+        self.eval_mb_size: int = train_mb_size if eval_mb_size is None else eval_mb_size
         """ Eval mini-batch size. """
 
         if evaluator is None:
@@ -136,12 +136,12 @@ class BaseSGDTemplate(BaseTemplate):
 
         self._stop_training = False
 
-    def train(self,
-              experiences: Union[CLExperience,
-                                 ExpSequence],
-              eval_streams: Optional[Sequence[Union[CLExperience,
-                                                    ExpSequence]]] = None,
-              **kwargs):
+    def train(
+        self,
+        experiences: Union[CLExperience, ExpSequence],
+        eval_streams: Optional[Sequence[Union[CLExperience, ExpSequence]]] = None,
+        **kwargs,
+    ):
 
         super().train(experiences, eval_streams, **kwargs)
         return self.evaluator.get_last_metrics()
@@ -161,9 +161,7 @@ class BaseSGDTemplate(BaseTemplate):
         super().eval(exp_list, **kwargs)
         return self.evaluator.get_last_metrics()
 
-    def _train_exp(
-        self, experience: CLExperience, eval_streams, **kwargs
-    ):
+    def _train_exp(self, experience: CLExperience, eval_streams, **kwargs):
         # Should be implemented in Observation Type
         raise NotImplementedError()
 
@@ -229,7 +227,9 @@ class BaseSGDTemplate(BaseTemplate):
         self.train_dataset_adaptation(**kwargs)
         self._after_train_dataset_adaptation(**kwargs)
 
-        self.make_train_dataloader(**kwargs)
+        self.make_train_dataloader(
+            **kwargs["other_dataloader_args"],
+        )
 
         # Model Adaptation (e.g. freeze/add new units)
         # self.model = self.model_adaptation()
@@ -238,9 +238,7 @@ class BaseSGDTemplate(BaseTemplate):
 
         super()._before_training_exp(**kwargs)
 
-    def _train_exp(
-        self, experience: CLExperience, eval_streams=None, **kwargs
-    ):
+    def _train_exp(self, experience: CLExperience, eval_streams=None, **kwargs):
         """Training loop over a single Experience object.
 
         :param experience: CL experience information.
@@ -308,7 +306,7 @@ class BaseSGDTemplate(BaseTemplate):
         shuffle=True,
         pin_memory=True,
         persistent_workers=False,
-        **kwargs
+        **kwargs,
     ):
         """Data loader initialization.
 
@@ -328,14 +326,16 @@ class BaseSGDTemplate(BaseTemplate):
         for k, v in kwargs.items():
             other_dataloader_args[k] = v
 
+        # reset MyBatchSampler
+
         self.dataloader = TaskBalancedDataLoader(
             self.adapted_dataset,
             oversample_small_groups=True,
             num_workers=num_workers,
-            batch_size=self.train_mb_size,
+            batch_size=self.train_mb_size,  # FIX? custom batchsampler
             shuffle=shuffle,
             pin_memory=pin_memory,
-            **other_dataloader_args
+            **other_dataloader_args,
         )
 
     def make_eval_dataloader(
@@ -358,14 +358,13 @@ class BaseSGDTemplate(BaseTemplate):
         for k, v in kwargs.items():
             other_dataloader_args[k] = v
 
-        collate_from_data_or_kwargs(self.adapted_dataset,
-                                    other_dataloader_args)
+        collate_from_data_or_kwargs(self.adapted_dataset, other_dataloader_args)
         self.dataloader = DataLoader(
             self.adapted_dataset,
             num_workers=num_workers,
-            batch_size=self.eval_mb_size,
+            batch_size=1,
             pin_memory=pin_memory,
-            **other_dataloader_args
+            **other_dataloader_args,
         )
 
     def eval_dataset_adaptation(self, **kwargs):
@@ -507,21 +506,17 @@ class PeriodicEval(SupervisedPlugin):
         if self.eval_every > 0 and counter % self.eval_every == 0:
             self._peval(strategy, **kwargs)
 
-    def after_training_epoch(self, strategy: "BaseSGDTemplate",
-                             **kwargs):
+    def after_training_epoch(self, strategy: "BaseSGDTemplate", **kwargs):
         """Periodic eval controlled by `self.eval_every` and
         `self.peval_mode`."""
         if self.peval_mode == "epoch":
-            self._maybe_peval(strategy, strategy.clock.train_exp_epochs,
-                              **kwargs)
+            self._maybe_peval(strategy, strategy.clock.train_exp_epochs, **kwargs)
 
-    def after_training_iteration(self, strategy: "BaseSGDTemplate",
-                                 **kwargs):
+    def after_training_iteration(self, strategy: "BaseSGDTemplate", **kwargs):
         """Periodic eval controlled by `self.eval_every` and
         `self.peval_mode`."""
         if self.peval_mode == "iteration":
-            self._maybe_peval(strategy, strategy.clock.train_exp_iterations,
-                              **kwargs)
+            self._maybe_peval(strategy, strategy.clock.train_exp_iterations, **kwargs)
 
     # ---> New
     def after_training_exp(self, strategy, **kwargs):

@@ -51,10 +51,7 @@ class TaskBalancedDataLoader:
     """Task-balanced data loader for Avalanche's datasets."""
 
     def __init__(
-        self,
-        data: AvalancheDataset,
-        oversample_small_tasks: bool = False,
-        **kwargs
+        self, data: AvalancheDataset, oversample_small_tasks: bool = False, **kwargs
     ):
         """Task-balanced data loader for Avalanche's datasets.
 
@@ -117,7 +114,7 @@ class GroupBalancedDataLoader:
         oversample_small_groups: bool = False,
         batch_size: int = 32,
         distributed_sampling: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """Data loader that balances data from multiple datasets.
 
@@ -159,7 +156,7 @@ class GroupBalancedDataLoader:
         self.loader_kwargs["collate_fn"] = lambda x: x
 
         # check if batch_size is larger than or equal to the number of datasets
-        assert batch_size >= len(datasets)
+        # assert batch_size >= len(datasets)
 
         # divide the batch between all datasets in the group
         ds_batch_size = batch_size // len(datasets)
@@ -189,6 +186,7 @@ class GroupBalancedDataLoader:
         dataloaders = []
         samplers = []
         for dataset, mb_size in zip(self.datasets, self.batch_sizes):
+            self.loader_kwargs["batch_sampler"].batch_size = mb_size
             data_l, data_l_sampler = _make_data_loader(
                 dataset,
                 self.distributed_sampling,
@@ -220,9 +218,7 @@ class GroupBalancedDataLoader:
                         # reinitialize data loader
                         if isinstance(t_loader_sampler, DistributedSampler):
                             # Manage shuffling in DistributedSampler
-                            t_loader_sampler.set_epoch(
-                                t_loader_sampler.epoch + 1
-                            )
+                            t_loader_sampler.set_epoch(t_loader_sampler.epoch + 1)
 
                         iter_dataloaders[tid] = iter(dataloaders[tid])
                         batch = next(iter_dataloaders[tid])
@@ -254,7 +250,7 @@ class GroupBalancedInfiniteDataLoader:
         datasets: Sequence[make_classification_dataset],
         collate_mbatches=_default_collate_mbatches_fn,
         distributed_sampling: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """Data loader that balances data from multiple datasets emitting an
         infinite stream.
@@ -276,7 +272,7 @@ class GroupBalancedInfiniteDataLoader:
             if _DistributedHelper.is_distributed and distributed_sampling:
                 seed = torch.randint(
                     0,
-                    2 ** 32 - 1 - _DistributedHelper.world_size,
+                    2**32 - 1 - _DistributedHelper.world_size,
                     (1,),
                     dtype=torch.int64,
                 )
@@ -288,13 +284,13 @@ class GroupBalancedInfiniteDataLoader:
             infinite_sampler = RandomSampler(
                 data,
                 replacement=True,
-                num_samples=10 ** 10,
+                num_samples=10**10,
                 generator=generator,
             )
             collate_from_data_or_kwargs(data, kwargs)
             dl = DataLoader(data, sampler=infinite_sampler, **kwargs)
             self.dataloaders.append(dl)
-        self.max_len = 10 ** 10
+        self.max_len = 10**10
 
     def __iter__(self):
         iter_dataloaders = []
@@ -324,7 +320,7 @@ class ReplayDataLoader:
         batch_size_mem: int = 32,
         task_balanced_dataloader: bool = False,
         distributed_sampling: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """Custom data loader for rehearsal strategies.
 
@@ -385,9 +381,7 @@ class ReplayDataLoader:
                 "and current data."
             )
 
-        self.data_batch_sizes, _ = self._get_batch_sizes(
-            data, batch_size, 0, False
-        )
+        self.data_batch_sizes, _ = self._get_batch_sizes(data, batch_size, 0, False)
 
         # Create dataloader for memory items
         if task_balanced_dataloader:
@@ -607,9 +601,9 @@ def _make_data_loader(
     collate_from_data_or_kwargs(dataset, data_loader_args)
 
     if force_no_workers:
-        data_loader_args['num_workers'] = 0
-        if 'persistent_workers' in data_loader_args:
-            data_loader_args['persistent_workers'] = False
+        data_loader_args["num_workers"] = 0
+        if "persistent_workers" in data_loader_args:
+            data_loader_args["persistent_workers"] = False
 
     if _DistributedHelper.is_distributed and distributed_sampling:
         sampler = DistributedSampler(
@@ -622,9 +616,8 @@ def _make_data_loader(
         )
     else:
         sampler = None
-        data_loader = DataLoader(
-            dataset, batch_size=batch_size, **data_loader_args
-        )
+        data_loader_args["batch_sampler"].reinit()
+        data_loader = DataLoader(dataset, batch_size=1, **data_loader_args)
 
     return data_loader, sampler
 

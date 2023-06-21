@@ -90,9 +90,7 @@ class AvalancheDataset(FlatData):
             applied by this dataset.
         :param transform_groups: Avalanche transform groups.
         """
-        if isinstance(datasets, TorchDataset) or isinstance(
-            datasets, AvalancheDataset
-        ):
+        if isinstance(datasets, TorchDataset) or isinstance(datasets, AvalancheDataset):
             warnings.warn(
                 "AvalancheDataset constructor has been changed. "
                 "Please check the documentation for the correct usage. You can"
@@ -101,8 +99,9 @@ class AvalancheDataset(FlatData):
                 DeprecationWarning,
             )
 
-        if issubclass(type(datasets), TorchDataset) or  \
-                issubclass(type(datasets), AvalancheDataset):
+        if issubclass(type(datasets), TorchDataset) or issubclass(
+            type(datasets), AvalancheDataset
+        ):
             datasets = [datasets]
 
         # NOTES on implementation:
@@ -184,9 +183,7 @@ class AvalancheDataset(FlatData):
         # Init data attributes
         ####################################
         # concat attributes from child datasets
-        if len(self._datasets) > 0 and isinstance(
-            self._datasets[0], AvalancheDataset
-        ):
+        if len(self._datasets) > 0 and isinstance(self._datasets[0], AvalancheDataset):
             for attr in self._datasets[0]._data_attributes.values():
                 if attr.name in self._data_attributes:
                     continue  # don't touch overridden attributes
@@ -219,9 +216,7 @@ class AvalancheDataset(FlatData):
 
         # set attributes dynamically
         for el in self._data_attributes.values():
-            assert len(el) == len(
-                self
-            ), f"BUG: Wrong size for attribute {el.name}"
+            assert len(el) == len(self), f"BUG: Wrong size for attribute {el.name}"
 
             if hasattr(self, el.name):
                 raise ValueError(
@@ -262,22 +257,20 @@ class AvalancheDataset(FlatData):
 
         dd = self._datasets[dataset_idx]
         if isinstance(dd, AvalancheDataset):
+            dd.batch_idx = self.batch_idx
             element = dd._getitem_recursive_call(idx, group_name=group_name)
         else:
-            element = dd[idx]
+            element = dd[(idx, self.batch_idx)]
 
         if self._frozen_transform_groups is not None:
-            element = self._frozen_transform_groups(
-                element, group_name=group_name
-            )
+            element = self._frozen_transform_groups(element, group_name=group_name)
         if self._transform_groups is not None:
             element = self._transform_groups(element, group_name=group_name)
         return element
 
-    def __getitem__(self, idx) -> Union[T_co, Sequence[T_co]]:
-        elem = self._getitem_recursive_call(
-            idx, self._transform_groups.current_group
-        )
+    def __getitem__(self, item) -> Union[T_co, Sequence[T_co]]:
+        idx, self.batch_idx = item
+        elem = self._getitem_recursive_call(idx, self._transform_groups.current_group)
         for da in self._data_attributes.values():
             if da.use_in_getitem:
                 if isinstance(elem, dict):
@@ -314,9 +307,7 @@ class AvalancheDataset(FlatData):
         """
         return self.with_transforms("eval")
 
-    def with_transforms(
-        self: TAvalancheDataset, group_name: str
-    ) -> TAvalancheDataset:
+    def with_transforms(self: TAvalancheDataset, group_name: str) -> TAvalancheDataset:
         """
         Returns a new dataset with the transformations of a different group
         loaded.
@@ -381,9 +372,7 @@ class AvalancheDataset(FlatData):
         This is a shallow copy, i.e. the data attributes are not copied.
         """
         dataset_copy = copy.copy(self)
-        dataset_copy._transform_groups = copy.copy(
-            dataset_copy._transform_groups
-        )
+        dataset_copy._transform_groups = copy.copy(dataset_copy._transform_groups)
         dataset_copy._frozen_transform_groups = copy.copy(
             dataset_copy._frozen_transform_groups
         )

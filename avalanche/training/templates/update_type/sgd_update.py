@@ -1,4 +1,3 @@
-
 class SGDUpdate:
     def training_epoch(self, **kwargs):
         """Training epoch.
@@ -6,10 +5,10 @@ class SGDUpdate:
         :param kwargs:
         :return:
         """
-        for self.mbatch in self.dataloader:
+        for (batch_iter, self.mbatch) in enumerate(self.dataloader):
             if self._stop_training:
                 break
-
+            assert self.mbatch[0].shape[0] == 64
             self._unpack_minibatch()
             self._before_training_iteration(**kwargs)
 
@@ -31,6 +30,7 @@ class SGDUpdate:
             # Optimization step
             self._before_update(**kwargs)
             self.optimizer_step()
+            kwargs.update({"batch_iter": batch_iter})
             self._after_update(**kwargs)
 
             self._after_training_iteration(**kwargs)

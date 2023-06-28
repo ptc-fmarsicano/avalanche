@@ -20,7 +20,7 @@ class SupervisedProblem:
 
     def criterion(self):
         """Loss function for supervised problems."""
-        return self._criterion(self.mb_output, self.mb_y)
+        return self._criterion(self.mb_output, self.mbatch[4:7], self.mbatch[3])
 
     def forward(self):
         """Compute the model's output given the current mini-batch."""

@@ -18,7 +18,7 @@ from itertools import chain
 from typing import Dict, Optional, Sequence, Union
 
 import torch
-from torch.utils.data import RandomSampler, DistributedSampler
+from torch.utils.data import RandomSampler, DistributedSampler, Sampler
 from torch.utils.data.dataloader import DataLoader
 
 from avalanche.benchmarks.utils import make_classification_dataset
@@ -38,6 +38,32 @@ _default_collate_mbatches_fn = classification_collate_mbatches_fn
 detection_collate_fn = _detection_collate_fn
 
 detection_collate_mbatches_fn = _detection_collate_mbatches_fn
+
+
+class MyBatchSampler(Sampler):
+    def __init__(self, sampler, batch_size, drop_last):
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+        self.count = 0
+
+    def __iter__(self):
+        batch = []
+        for idx in self.sampler:
+            batch.append((idx, self.count))
+            if len(batch) == self.batch_size:
+                self.count += 1
+                yield batch
+                batch = []
+
+        if len(batch) > 0 and not self.drop_last:
+            yield batch
+
+    def __len__(self) -> int:
+        if self.drop_last:
+            return len(self.sampler) // self.batch_size  # type: ignore[arg-type]
+        else:
+            return (len(self.sampler) + self.batch_size - 1) // self.batch_size  # type: ignore[arg-type]
 
 
 def collate_from_data_or_kwargs(data, kwargs):
@@ -288,7 +314,15 @@ class GroupBalancedInfiniteDataLoader:
                 generator=generator,
             )
             collate_from_data_or_kwargs(data, kwargs)
-            dl = DataLoader(data, sampler=infinite_sampler, **kwargs)
+            print("changing batch_sampler")
+            batch_size = kwargs.pop("batch_size", None)
+            dl = DataLoader(
+                data,
+                batch_sampler=MyBatchSampler(
+                    infinite_sampler, batch_size, drop_last=True
+                ),
+                **kwargs,
+            )
             self.dataloaders.append(dl)
         self.max_len = 10**10
 

@@ -34,9 +34,7 @@ class AGEMPlugin(SupervisedPlugin):
         self.patterns_per_experience = int(patterns_per_experience)
         self.sample_size = int(sample_size)
 
-        self.buffers: List[
-            make_classification_dataset
-        ] = []  # one AvalancheDataset for
+        self.buffers: List[make_classification_dataset] = []  # one AvalancheDataset for
         # each experience.
         self.buffer_dataloader = None
         self.buffer_dliter = None
@@ -55,7 +53,12 @@ class AGEMPlugin(SupervisedPlugin):
             xref, yref = xref.to(strategy.device), yref.to(strategy.device)
 
             out = avalanche_forward(strategy.model, xref, tid)
-            loss = strategy._criterion(out, yref)
+            # yref = rename_output([out.to(strategy.device) for out in mb[4:7]])
+            is_fg = mb[3]
+
+            loss = strategy._criterion(
+                out, [m.to(strategy.device) for m in mb[4:7]], is_fg.to(strategy.device)
+            )
             loss.backward()
             # gradient can be None for some head on multi-headed models
             self.reference_gradients = [
@@ -90,17 +93,13 @@ class AGEMPlugin(SupervisedPlugin):
                 alpha2 = dotg / torch.dot(
                     self.reference_gradients, self.reference_gradients
                 )
-                grad_proj = (
-                    current_gradients - self.reference_gradients * alpha2
-                )
+                grad_proj = current_gradients - self.reference_gradients * alpha2
 
                 count = 0
                 for n, p in strategy.model.named_parameters():
                     n_param = p.numel()
                     if p.grad is not None:
-                        p.grad.copy_(
-                            grad_proj[count : count + n_param].view_as(p)
-                        )
+                        p.grad.copy_(grad_proj[count : count + n_param].view_as(p))
                     count += n_param
 
     def after_training_exp(self, strategy, **kwargs):
@@ -127,7 +126,7 @@ class AGEMPlugin(SupervisedPlugin):
         if removed_els > 0:
             indices = list(range(len(dataset)))
             random.shuffle(indices)
-            dataset = dataset.subset(indices[:self.patterns_per_experience])
+            dataset = dataset.subset(indices[: self.patterns_per_experience])
 
         self.buffers.append(dataset)
 

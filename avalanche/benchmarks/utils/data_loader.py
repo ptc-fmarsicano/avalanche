@@ -16,8 +16,10 @@
 """
 from itertools import chain
 from typing import Dict, Optional, Sequence, Union
-
+import os
 import torch
+import numpy as np
+from dataclasses import dataclass
 from torch.utils.data import RandomSampler, DistributedSampler, Sampler
 from torch.utils.data.dataloader import DataLoader
 
@@ -38,6 +40,23 @@ _default_collate_mbatches_fn = classification_collate_mbatches_fn
 detection_collate_fn = _detection_collate_fn
 
 detection_collate_mbatches_fn = _detection_collate_mbatches_fn
+
+
+@dataclass
+class Sampler:
+    num_samples: int
+    recycled_batches: int
+    num_workers: int = os.cpu_count()
+
+    def __len__(self):
+        return self.num_samples * self.recycled_batches
+
+    def __iter__(self):
+        buffer_idxs = list(range(self.num_samples))
+        for _ in range(self.recycled_batches):
+            np.random.shuffle(buffer_idxs)
+            for i in buffer_idxs:
+                yield i
 
 
 class MyBatchSampler(Sampler):

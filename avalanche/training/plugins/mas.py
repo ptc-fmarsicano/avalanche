@@ -6,8 +6,8 @@ import torch
 
 from avalanche.models.utils import avalanche_forward
 from avalanche.training.plugins.strategy_plugin import SupervisedPlugin
-from avalanche.training.utils import copy_params_dict, zerolike_params_dict, \
-    ParamData
+from avalanche.training.utils import copy_params_dict, zerolike_params_dict, ParamData
+from avalanche.benchmarks.utils.data_loader import MyBatchSampler, Sampler
 
 
 class MASPlugin(SupervisedPlugin):
@@ -29,9 +29,7 @@ class MASPlugin(SupervisedPlugin):
     https://github.com/mmasana/FACIL/blob/master/src/approach/mas.py
     """
 
-    def __init__(
-        self, lambda_reg: float = 1.0, alpha: float = 0.5, verbose=False
-    ):
+    def __init__(self, lambda_reg: float = 1.0, alpha: float = 0.5, verbose=False):
         """
         :param lambda_reg: hyperparameter weighting the penalty term
                in the loss.
@@ -74,10 +72,17 @@ class MASPlugin(SupervisedPlugin):
             if hasattr(strategy.experience.dataset, "collate_fn")
             else None
         )
+        epoch_size = 36_000  # around 3 minutes of computation time (200 samples/s kubernetis speed * 3 *60)
+        num_updates = min(len(strategy.experience.dataset), epoch_size)  # from template
         dataloader = DataLoader(
             strategy.experience.dataset,
-            batch_size=strategy.train_mb_size,
+            # batch_size=strategy.train_mb_size,
             collate_fn=collate_fn,
+            batch_sampler=MyBatchSampler(
+                Sampler(num_updates, 1),
+                batch_size=strategy.train_mb_size,
+                drop_last=True,
+            ),
         )  # type: ignore
 
         # Progress bar
@@ -89,6 +94,8 @@ class MASPlugin(SupervisedPlugin):
             # Get batch
             if len(batch) == 2 or len(batch) == 3:
                 x, _, t = batch[0], batch[1], batch[-1]
+            elif len(batch) == 8:
+                x, _, t, *_ = batch
             else:
                 raise ValueError("Batch size is not valid")
 
@@ -98,9 +105,9 @@ class MASPlugin(SupervisedPlugin):
             # Forward pass
             strategy.optimizer.zero_grad()
             out = avalanche_forward(strategy.model, x, t)
-
+            points_out = out[1]
             # Average L2-Norm of the output
-            loss = torch.norm(out, p="fro", dim=1).pow(2).mean()
+            loss = torch.norm(points_out, p="fro", dim=1).pow(2).mean()
             loss.backward()
 
             # Accumulate importance
@@ -139,8 +146,8 @@ class MASPlugin(SupervisedPlugin):
         for name, param in strategy.model.named_parameters():
             if name in self.importance.keys():
                 loss_reg += torch.sum(
-                    self.importance[name].expand(param.shape) *
-                    (param - self.params[name].expand(param.shape)).pow(2)
+                    self.importance[name].expand(param.shape)
+                    * (param - self.params[name].expand(param.shape)).pow(2)
                 )
 
         # Update loss
@@ -166,9 +173,11 @@ class MASPlugin(SupervisedPlugin):
             new_shape = curr_importance[name].data.shape
             if name not in self.importance:
                 self.importance[name] = ParamData(
-                    name, curr_importance[name].shape,
+                    name,
+                    curr_importance[name].shape,
                     device=curr_importance[name].device,
-                    init_tensor=curr_importance[name].data.clone())
+                    init_tensor=curr_importance[name].data.clone(),
+                )
             else:
                 self.importance[name].data = (
                     self.alpha * self.importance[name].expand(new_shape)
